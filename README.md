@@ -26,7 +26,7 @@ In order to detect correctly the cars in each frame of the video, some kind of c
 ####1. Dataset management
 
 The dataset provided is made as follows:
-vehicles: 2876 + 7100
+vehicles: 2826 + 5967
 non-vehicles: 8968
 
 The vehicles dataset was made of two subset. The first includes usual vehicle images. The second set instead, comes from vehicles images of different nature, in more critical scenario. 
