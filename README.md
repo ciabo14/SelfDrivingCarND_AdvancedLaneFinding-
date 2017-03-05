@@ -268,7 +268,7 @@ def filter_window_by_heatmaps(self,image):
 	labels = label(self.heatmap)
 	return self.draw_labeled_bboxes(np.copy(image), labels)
 ```
-
+![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/heatmap.png)
 
 ####3. Car windows drawing
 
@@ -290,7 +290,7 @@ def draw_labeled_bboxes(self, img, labels):
 	# Return the image
 	return img
 ```
-
+![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/car_detected.png)
 ###Pipeline 
 
 The execution of the described pipeline to a video respect to an image has 1 main difference: the application of the thracking respect to the last x frames. 
