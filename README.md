@@ -32,7 +32,9 @@ non-vehicles: 8968
 The vehicles dataset was made of two subset. The first includes usual vehicle images. The second set instead, comes from vehicles images of different nature, in more critical scenario. 
 Below a couple of images coming from the datasets.
 
+**non-vehicles**
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/non-vehicles.png)
+**vehicles**
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/vehicles1.png)
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/vehicles2.png)
 
@@ -98,41 +100,91 @@ self.spatial_size = 16
 self.hist_bins = 32
 self.hist_range = (0,256)
 ```
-
+![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/hog.png)
 ####3. Classifier training
 
-The SVM classifier was the classifier choosen. Several 
+The SVM classifier was the classifier choosen. Different type of classifier were tested. Different values for C, gamma parameters as well as different values for the kernel. 
 
-###Pipeline (single images)
+Once adjusted the parameters, the most interesting points come from the kernel. Using a linear rather then an rbf kernel, I reached the following accuracies: 
+1. 99.5% using the rbf kernel
+2. 99.0% using the linear kernel. 
 
-Once the camera is calibrated (ad this is executed only once whe I started working on the project), each image (single or from a frame), can be elaborated in order to detect lane.
-As the graph below shows, the images are processed as follow:
-1. Undistort the image using the camera matrix and the undistortion parameters as shown above
-2. Apply image analisys *filters* in order to keep almost only pixels from lane lines:
-  1. Apply HLS image thresholds over Saturation and Hue channels
-  2. Apply sobel operator along x and y direction; 
-    1. Combine sobel x and sobel y masks with magnitude thresholds
-    2. Combine sobel x and sobel y masks with direction thresholds
-    3. Combine the both filters above in a Bitwise OR manner
-3. Combine filter both from Sobel application and color channels thresholding in a Bitwise OR manner.
-4. Apply perspective transformation to select lane section only
-5. Elaborate the image obtained from the perspective transformation application as follow:
-  1. Compute lane lines pixels using slinding windows and the histogram, or using the last recognised lane lines
-  2. Evaluate the found lines from a plausability point of view
-  3. Compute lines polynomial fit
-  4. Compute lanes curvature and position
-6. Transform the binary mask with the found lane lines back in the original perspective 
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/Pipeline_Diagram.png)  
+Some abservation about the two classifer are at the end of the report.
 
-####1. Correction of the image distortion.
+``` python
+def train_SVC(self):
 
-Test images, or frames from the video, were undistorted using the CameraManager function *undistort_image()*. This function only take an image as input, and return the undistorted image 
-```python
-def undistort_image(self,img):
-	return cv2.undistort(img, self.cam_mtx, self.cal_dist, None, self.cam_mtx)
+	if os.path.isfile(SVC_file):
+		print("loading classifier from File...")
+		data = pickle.load(open(SVC_file,"rb"))
+		self.svc = data["svc"]
+		self.std = data["std"]
+	else:
+
+		train_set, train_set_labels, test_set, test_set_labels = self.compute_dataset()
+
+		print("Training SVC")
+		if self.svc_type == "non-linear":
+			self.svc = SVC(kernel = str(self.kernel)) #SVC(kernel='linear')
+		if self.svc_type == "linear":
+			self.svc = LinearSVC() #SVC(kernel='linear')
+		self.svc.fit(train_set.tolist(), train_set_labels)
+		score = self.svc.score(test_set,test_set_labels)
+		predictions = self.svc.predict(test_set)
+		print(score)
+		print(predictions)
+		data = {"svc":self.svc,"std":self.std}
+
+		pickle.dump(data, open(SVC_file,"wb"))
 ```
-Below an example of how an image appears after the distortion correction.
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/TestImageUndistortion.png)  
+The classifier was computed only once (as well as the the StarndardScaler)
+
+```python
+self.std = StandardScaler()
+
+train_set = self.std.fit_transform(train_features)
+test_set = self.std.fit_transform(test_features)
+```
+
+###Car detection and tracking
+
+Once the classifier was trained, all the images from the frame were elaborated in order to detect and track the cars.
+
+####1. Split of the frame into windows. 
+
+The classifier was trained using windows of size (64,64). For this reason in order to detect cars into the frames of the video a windows split of the image is required. 
+With the knowledge that cars appears bigger when close to the camera, and smaller when far away from the camera, in order to detect cars we need to use windows with different size, depending on the relative position respect to the camera. 
+In addition, there is no reason to look for cars in the sky. So different region of interests where to look for cars were selected.
+
+4 different region of interest were selected:
+```python
+search_windows = np.array([
+	(0, 1280, 380, 600, 1, 2),
+	(0, 1280, 380, 650, 1.5, 2),
+	(0, 1300, 380, 700, 2, 1.5),
+	(0, 1300, 380, 720, 2.5, 1.5),
+	(0, 1300, 380, 720, 3, 1.25),
+	(0, 1300, 380, 720, 3.5, 1.25)
+])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ####2. Image filtering
 
