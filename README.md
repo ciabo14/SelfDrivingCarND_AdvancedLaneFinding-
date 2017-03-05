@@ -32,9 +32,7 @@ non-vehicles: 8968
 The vehicles dataset was made of two subset. The first includes usual vehicle images. The second set instead, comes from vehicles images of different nature, in more critical scenario. 
 Below a couple of images coming from the datasets.
 
-**non-vehicles**
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/non-vehicles.png)
-**vehicles**
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/vehicles1.png)
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/vehicles2.png)
 
@@ -156,7 +154,7 @@ The classifier was trained using windows of size (64,64). For this reason in ord
 With the knowledge that cars appears bigger when close to the camera, and smaller when far away from the camera, in order to detect cars we need to use windows with different size, depending on the relative position respect to the camera. 
 In addition, there is no reason to look for cars in the sky. So different region of interests where to look for cars were selected.
 
-4 different region of interest were selected:
+6 different region of interest were selected:
 ```python
 search_windows = np.array([
 	(0, 1280, 380, 600, 1, 2),
@@ -168,384 +166,171 @@ search_windows = np.array([
 ])
 ```
 
+Looking at the region of interests defined above, we can see overlap between the regions. The reason is because, for each of the reagion is also specified the scale factor and the overlap factor used during the sliding window procedure. Eeach item in the *search_windows* array above represent: *x_min, x_max, y_min, y_max, scale, overlap*. 
+The most interesting elements in the entry of the array are probably the scale and the overlap parameters. While the overlap parameter is used in the sliding window function to specify how much to overlap each window to the previous one, the scale factor is used to scale the entire region of interest in order to apply always the same windows size. Means there is no a different size for the selected windwos, but instead the region of interest is scaled by a factor *scale*
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-####2. Image filtering
-
-Lines are elements in the image recognized by drivers because of their shape, color and position/direction. Moreover, lines are detected in different light conditions. Good Light, presence of shadows ecc. 
-In order to recognize lines as a human driver does, the same recognition process is eligible for machines. 
-For this reasons two different filtering to the images were applied in order to discover lane lines:
-1. Color filtering
-2. Shape and position filtering using Sobel operator
-The first intuitive way to use color filtering, is to filter white and yellow colors in the image and discard all the other colors. However, using the RGB color space, we can develop a filter correlated to the light in the image (enviroment). 
-However, moving to a different space we can capture lines indipendetly form the the light (day light, artificial lights or even shadows). 
-This is the case of the HLS color space. 
-Filtering the image in the Hue and Saturation channels, we are able to remove the majority of the pixels keeping lane lines even in shadows conditions.
-I applyed a threshold to the Hue and Saturation channels defined as below:
 ```python
-mask_HLS = {"low_thresholds":np.array([ 0,  0,  100]), "high_thresholds":np.array([ 100, 255, 255])}
-...
+def compute_sliding_windows(self, image, x_start_stop=[None, None], y_start_stop=[None, None], scale = 1, cells_per_step = 2):
 
-def color_select(self, mask_dict, img_representation = "RGB"):
-	mask = np.zeros_like(self.gray)
-	if(img_representation == "RGB"):
-		mask[((self.undistorted_image[:,:,0] >= mask_dict["low_thresholds"][0]) & (self.undistorted_image[:,:,0] <= mask_dict["high_thresholds"][0])) & ((self.undistorted_image[:,:,1] >= mask_dict["low_thresholds"][1]) & (self.undistorted_image[:,:,1] <= mask_dict["high_thresholds"][1]))& 
+	roi = image[y_start_stop[0]:y_start_stop[1],x_start_stop[0]:x_start_stop[1],:]
+	img_tosearch = cv2.resize(roi,(np.int(roi.shape[1]/scale),np.int(roi.shape[0]/scale)))
+	if scale != 1:
+		road_roi = RoadImage(img_tosearch)
+	else:
+		road_roi = RoadImage(roi)
+	road_roi.extract_hog_features(self.hog_cspace, self.hog_channel, self.orient, 
+								self.pix_per_cell, self.cell_per_block, False, False)
+
+	nxbloks = (img_tosearch.shape[1] // self.pix_per_cell) -1
+	nybloks = (img_tosearch.shape[0] // self.pix_per_cell) -1
+
+	nblocks_per_windows = (self.windows_size //self.pix_per_cell) -1
+	nxsteps = int((nxbloks - nblocks_per_windows) // cells_per_step)
+	nysteps = int((nybloks - nblocks_per_windows) // cells_per_step)
+	for xb in range(nxsteps):
+		for yb in range(nysteps):
+			ypos = int(yb*cells_per_step)
+			xpos = int(xb*cells_per_step)
 	
-	if(img_representation == "HLS"):
-		mask[((self.HLS_image[:,:,0] >= mask_dict["low_thresholds"][0]) & (self.HLS_image[:,:,0] <= mask_dict["high_thresholds"][0]))&((self.HLS_image[:,:,1] >= mask_dict["low_thresholds"][1]) & (self.HLS_image[:,:,1] <= mask_dict["high_thresholds"][1]))&((self.HLS_image[:,:,2] >= mask_dict["low_thresholds"][2]) & (self.HLS_image[:,:,2] <= mask_dict["high_thresholds"][2]))] = 1	
+			# Extract HOG for this patch
+			hog_features = []
+			hog_features.append(road_roi.hog_features_1[ypos:ypos+nblocks_per_windows, xpos:xpos+nblocks_per_windows]) 
+			hog_features.append(road_roi.hog_features_2[ypos:ypos+nblocks_per_windows, xpos:xpos+nblocks_per_windows])
+			hog_features.append(road_roi.hog_features_3[ypos:ypos+nblocks_per_windows, xpos:xpos+nblocks_per_windows])
+			hog_features =  np.ravel(hog_features)
 
-	return mask
+			x_left = int(xpos*pix_per_cell)
+			y_top = int(ypos*pix_per_cell)
+			# Extract the image patch
+
+			subimg = cv2.resize(road_roi.image[y_top:y_top+self.windows_size, x_left:x_left+self.windows_size], (64,64))
+
+			wi = WindowImage(subimg,hog_features)
+
+			wi = self.compute_feature_vector(wi = wi)
+			
+			# Scale features and make a prediction
+			test_features = self.std.transform(wi.image_features)
+
+			test_prediction = self.svc.predict(test_features)
+
+			if test_prediction == 1:
+				xbox_left = np.int(x_left*scale)
+				ytop_draw = np.int(y_top*scale)
+				win_draw = np.int(self.windows_size*scale)
+				self.windows.append(((xbox_left+x_start_stop[0], ytop_draw+y_start_stop[0]),(xbox_left+win_draw++x_start_stop[0],ytop_draw+win_draw+y_start_stop[0])))
 ```
-Below you can find the application of the HLS color filtering to one of the test images.
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/HLSFIltering.png)  
-**Sobel operator** is a very powerful operator to detect edges. Depending on the kernel size, it can detect sharper or stronger edges in the desired direction. Edges are computed convolving the kernel all along the image and computing a gradient value for each pixel of the image. Thresholding this gradient let us to choose which pixels are for us edges (an then lane lines).
-Sobel application along x and y, can be combined in different ways. For this project:
-1. I first combined the two direction application looking at the magnitude mask
-2. Then I used the x and y application of the operator to compute a sobel direction mask
-3. I combined the magnitude and the direction mask in a single sobel mask.  
-The ImageManager is responsible to aply this filtering with the function *combine_sobel_filters()*. It first calls the RoadImage *apply_sobel_operator()* that runs the procedure of filters computation
-```python
-self.mag_thresh = (30,255)
-self.sobel_kernel = 5
-self.dir_thresh = (0.6, 1.2)
-
-...
-
-def apply_sobel_operator(self):
-
-	sobel_x = cv2.Sobel(self.gray, cv2.CV_64F, 1, 0, ksize=self.sobel_kernel)
-	sobel_y = cv2.Sobel(self.gray, cv2.CV_64F, 0, 1, ksize=self.sobel_kernel)
-	self.abs_sobel_x = self.abs_sobel_thresh(sobel_x,"x")
-	self.abs_sobel_y = self.abs_sobel_thresh(sobel_y,"y")
-	self.mag_sobel = self.mag_thresh_mask(sobel_x,sobel_y)
-	self.dir_sobel = self.dir_threshold(sobel_x,sobel_y)
-```
-and then combine the sobel filters application as:
-```python
-def combine_sobel_filter(self,image):
-	sobel_combined = np.zeros_like(image.gray)
-	#sobel_combined[((image.abs_sobel_x == 1) & (image.abs_sobel_y == 1)) | ((image.mag_sobel == 1) & (image.dir_sobel == 1))] = 1
-	sobel_combined[((image.mag_sobel == 1) & (image.dir_sobel == 1))] = 1
-	return sobel_combined
-```
-This bring in results like in the image below:
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/SobelFiltering.png)  
-
-####3. Color and Sobel masks combination
-
-Finally, color and sobel masks are combined  in a Bitwise OR manner, leading at the following edge image:
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/HLS_SobelMasksApplication
-.png)
-Below The code that describe all the filtering process executed by the ImageManager class:
-```python
-def filter_image_for_line_detection(self):
-	self.img.apply_sobel_operator()
-	self.img.set_sobel_combined(self.combine_sobel_filter(self.img))
-	self.img.set_color_line_mask(self.combine_color_filters(self.img))
-	self.img.set_lane_lines_mask(cv2.bitwise_or(self.img.sobel_combined,self.img.color_line_mask))
-```
-
-####4. Perspective transformation
-
-Perspective transformation to bird eyes perspective is very useful to limit the section of the image where to focus the interest and, more important, to work on an image without prospective distortion (parallel lines appears parallel in the bird eyes image and not convergent in the vanishing Point).
-For this purpose the *cv2.warpPerspective* was computed it the edge image, selecting as source and destination corners of the rectangle the following corners:
-Below The code that describe all the filtering process executed by the ImageManager class:
-```python
-height_section = np.uint(img_size[1]/2)
-
-top_left_coordinate = height_section - .107*np.uint(img_size[1]/2)
-top_right_coordinate = height_section + .113*np.uint(img_size[1]/2)
-bottom_left_coordinate = height_section - .7*np.uint(img_size[1]/2)
-bottom_right_coordinate = height_section + .75*np.uint(img_size[1]/2)
-
-top_margin = np.uint(img_size[0]/1.55)
-bottom_margin = np.uint(img_size[0])
-
-src_corners = np.float32([[bottom_left_coordinate,bottom_margin], #bottomLeft
-	[bottom_right_coordinate,bottom_margin],	#bottomRight
-    [top_right_coordinate,top_margin], #topRight
-    [top_left_coordinate,top_margin]]) #topLeft
-    
-"""
-| Source        | Destination   | 
-|:-------------:|:-------------:| 
-| 192, 720      | 200, 720      | 
-| 1120, 720     | 1080, 720     |
-| 712, 464      | 1080, 0       |
-| 571, 464      | 200, 0        |
- """    
-```
-I also tryed with different fixed corners. However this bring very similar results.
-```python
-src_corners = np.array([[585, 460], [203, 720], [1127, 720], [695, 460]]).astype(np.float32)
-			dst_corners = np.array([[320, 0], [320, 720], [960, 720], [960, 0]]).astype(np.float32)
-```
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/PerspectiveTransformation.png)
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/PerspectiveTransformation-Filtered.png)
-
-####5. Lane lines detection
-
-Since having a significative image on which working on as basilar for lane detection, a roboust approach to detect lane lines is as much important as a roboust filtering of the original image.
-In order to achieve the goal to detect lane lines (and than the entire lane), some consecuteve steps where executed:
-1. Compute lane lines pixels using slinding windows and the histogram, or using the last recognised lane lines
-2. Evaluate the found lines from a plausability point of view
-3. Compute lines polynomial fit
-4. Compute lanes curvature and position
-This sequence of computation are executed by the function *detect_lines()* of the Line class
-def detect_lanes(self, binary_warped):
-```python
-def detect_lanes(self, binary_warped):
-	left_pixel_positions_x,left_pixel_positions_y,right_pixel_positions_x,right_pixel_positions_y = self.pixels_detection(binary_warped)
-	self.manage_detected_pixels(left_pixel_positions_x, left_pixel_positions_y, right_pixel_positions_x, right_pixel_positions_y)
-	self.fit_found_lanes(binary_warped)
-	self.manage_curvature()
-
-	self.find_offset()
-```
-
-#####5.1 Compute lane lines position pixels *pixels_detection()*
-
-Depending on the application (test images or video stream), and from the history of detection (in case of video stream), the algorithm detect the lane pixels: 
-1. or appliying a sliding windows starting from the peaks found in the histogram of the image, 
-2. or looking at the pixels around the last lines detected.
-The sliding windows approach is applied when we are using a single test image; when we are looking at the first frame of a video or when the left or right lines are not detected for the last *x* frames:
-```python
-# In case first frame or in last 5 frames I did not found a left or right line
-	if(self.first_frame or self.left_line_missing > 5 or self.right_line_missing > 5):
-```
-In all the other cases, pixels around the last lines are considered for the new line detection.
-```python
-def pixels_detection(self,binary_warped):
-	out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
-	left_lane_inds = []
-	right_lane_inds = []
-
-	nonzero = binary_warped.nonzero()
-	nonzeroy = np.array(nonzero[0])
-	nonzerox = np.array(nonzero[1])
-...
-```
-
-#####5.2 Evlaluate found lines *manage_detected_pixels()*
-
-Once candidate lines pixels were selected, the strategy need to decide if the found pixels are enough for considering a lane line, and if these pixels brings to a significative lane line. 
-Two different approaches were tested: the first one use a buffer with the last *self.last_frame_used* lines detected pixels, and depending on the amount of the pixels detected, the list ring is modified accordingly. In case enough pixels were detected (and then we can consider the line as detected), this amout of pixels were added to the list while the oldest detected pixels in the list were removed: if the amount of pixels are not eought, the last detected pixels in the list were added once more to the list itself, removign the oldest pixels detected.
-The second approach used instead, I consider the detected pixels as a line and, indipendently from the number of pixels detected, these are used for polinomial fitting. 
-```python
-def manage_detected_pixels(self, left_x, left_y, right_x, right_y):
-
-	self.left_x = left_x
-	self.left_y = left_y
-	self.right_x = right_x
-	self.right_y = right_y
-
-	if self.use_lines_history:
-		num_frames = len(self.last_frames_left_x)
-
-		if(num_frames == 0):
-			self.last_frames_left_x.append(left_x)
-			self.last_frames_left_y.append(left_y)
-			self.last_frames_right_x.append(right_x)
-			self.last_frames_right_y.append(right_y)				
-		else:
-			if num_frames >= self.last_frame_used:
-				del(self.last_frames_left_x[0])
-				del(self.last_frames_left_y[0])
-				del(self.last_frames_right_x[0])
-				del(self.last_frames_right_y[0])
-
-			if len(left_x) > self.min_pix_line_identification:
-				self.last_frames_left_x.append(left_x)
-				self.last_frames_left_y.append(left_y)
-				self.left_line_missing = 0
-			else:
-				self.last_frames_left_x.append(self.last_left_x)
-				self.last_frames_left_y.append(self.last_left_y)
-				self.left_line_missing += 1
-			if len(right_x) > self.min_pix_line_identification:
-				self.last_frames_right_x.append(right_x)
-				self.last_frames_right_y.append(right_y)
-				self.right_line_missing = 0
-			else:
-				self.last_frames_right_x.append(self.last_right_x)
-				self.last_frames_right_y.append(self.last_right_y)
-				self.right_line_missing += 1
-	else:
-		if self.last_left_x != None:
-			if len(left_x) < self.min_pix_line_identification:
-					self.left_x = self.last_left_x
-					self.left_y = self.last_left_y
-			if len(right_x) < self.min_pix_line_identification:
-					self.right_x = self.last_right_x
-					self.right_y = self.last_right_y
-		
-	self.set_last_xy(left_x, left_y, right_x, right_y)
-```
-
-#####5.3 Compute lines polynomial fit *fit_found_lanes()*
-
-In both cases the pixels are then fitted by a polynomial function. In the first case all the detected pixels from history are used to fit a polynomial function. In second case instead, the polinomial function fitted in the last detected pixels is weighted with the polynomial coefficients found at the last iteration.
-def fit_found_lanes(self, binary_warped):
-```python
-def fit_found_lanes(self, binary_warped):
-
-	# Fit a second order polynomial to each
-	if self.use_lines_history:
-		current_left_x = [item for sublist in self.last_frames_left_x for item in sublist]
-		current_left_y = [item for sublist in self.last_frames_left_y for item in sublist]
-		current_right_x = [item for sublist in self.last_frames_right_x for item in sublist]
-		current_right_y = [item for sublist in self.last_frames_right_y for item in sublist]
-	else:
-		current_left_x = self.left_x
-		current_left_y = self.left_y
-		current_right_x = self.right_x
-		current_right_y = self.right_y
-
-	self.ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
-
-	l_fit = np.polyfit(current_left_y, current_left_x, 2)
-	r_fit = np.polyfit(current_right_y, current_right_x, 2)
-
-	if(self.use_lines_history):
-		self.left_fit = l_fit
-		self.right_fit = r_fit
-	else:
-		self.compute_smoothed_poly(l_fit, r_fit)
-
-	self.left_fitx = self.left_fit[0]*self.ploty**2 + self.left_fit[1]*self.ploty + self.left_fit[2]
-	self.right_fitx = self.right_fit[0]*self.ploty**2 + self.right_fit[1]*self.ploty + self.right_fit[2]
-```
-
-#####5.4 Compute line curvature and camera position *manage_curvature(),  find_offset()*
-
-Lane curvature can be an important indicator about the the detected lane lines are correct, and even more importantly, can be an important indicator about how to handle a courve with a steering angle.
-For this reason, starting from detected lines, the curvature of these is computed. As for the lines pixels, also for the curvature two different approaches were tested: the first who involves the last *self.last_frame_used* curvature value to smooth the current one; the second one who smooth the current computed curvature, the the curvature computed in the last frame.
-This is not all. Since curvature is highly dependant from the detected lines, and the lines from the pixel (i.e. from the edges detected in the first stage of the project), a plausability check was done, before to use this curvature value as value for the current frame.
-```python
-def manage_curvature(self):
-
-	l_curvature = self.estimate_Rof("l")
-	r_curvature = self.estimate_Rof("r")
-
-	if self.use_lines_history:
-
-		left_mean = np.mean(self.last_frame_left_curvature)
-		right_mean = np.mean(self.last_frame_right_curvature)
-
-		num_frames = len(self.last_frame_left_curvature)
-		tmp_curvature = 0
-
-		if num_frames == 0:
-			self.last_frame_left_curvature.append(l_curvature)
-			self.last_frame_right_curvature.append(r_curvature)
-			self.mean_curvature = np.mean([l_curvature,r_curvature])
-		else:
-			if num_frames >= self.last_frame_used:
-				del(self.last_frame_left_curvature[0])
-				del(self.last_frame_right_curvature[0])
-
-			if left_mean + self.max_curvature_deviation > l_curvature > left_mean - self.max_curvature_deviation:
-				self.last_frame_left_curvature.append(l_curvature)
-			else:
-				self.last_frame_left_curvature.append(left_mean)
-				l_curvature = left_mean
-
-			if right_mean + self.max_curvature_deviation > r_curvature > right_mean - self.max_curvature_deviation:
-				self.last_frame_right_curvature.append(r_curvature)
-			else:
-				self.last_frame_right_curvature.append(right_mean)
-				r_curvature = right_mean
-
-		self.mean_curvature = np.mean([l_curvature,r_curvature])
-
-	else:
-		self.compute_smoothed_curvature(l_curvature, r_curvature)
-
-```
-In the first approach, in case the computed curvature is not close enough to the last one (or the mean depending on the history curvature), it is discarded and the the mean of the curvature history is used as current curvature. 
-
-The camera position finally is computed using the lines detected as described above, with the following function:
-```python
-def find_offset(self):
-	lane_width = 3.7  # metres
-	h = 720  # height of image (index of image bottom)
-	w = 1280 # width of image
-
-	# Find the bottom pixel of the lane lines
-	l_px = self.left_fit[0] * h ** 2 + self.left_fit[1] * h + self.left_fit[2]
-	r_px = self.right_fit[0] * h ** 2 + self.right_fit[1] * h + self.right_fit[2]
-
-	# Find the number of pixels per real metre
-	scale = lane_width / np.abs(l_px - r_px)
-
-	# Find the midpoint
-	midpoint = np.mean([l_px, r_px])
-
-	# Find the offset from the centre of the frame, and then multiply by scale
-	self.offset = (w/2 - midpoint) * scale
-```
-
-###6. Drow information on the original undistorted image
-
-Finally, both for test images and for frames caming from a video stream, the information are drown in the bird eyes image, and than transformed back in the original unistorted image.
-
-###Pipeline (video)
-
-The execution of the described pipeline to a video respct to an image has 2 main differences:
-1. All the detection smoothing as well as plausability verification can be applied
-2. The frames need to be written back in a video stream.
-The second requirement was accomplished with the support of the *moviepy.editor VideoFileClip* class.
-Instead of just apply the algorithm to a single image (and create a new ImageManager for each image), a single instance of the Image manager is used and history about lanes and images is memorized
+The first two code lines select the region of interest and then resize it by the scale factor
 
 ```python
-def test_video():
-	print("Running on test video1...")
-	# Define our Lanes object
-	#im = ImageManager(cm)
-	#####################################
-	# Run our pipeline on the test video 
-	#####################################
+roi = image[y_start_stop[0]:y_start_stop[1],x_start_stop[0]:x_start_stop[1],:]
+img_tosearch = cv2.resize(roi,(np.int(roi.shape[1]/scale),np.int(roi.shape[0]/scale)))
+```
+Then all the parameters of roi splitting are computed and used to select window image, to be converted into feature vector and then classified.
+```python
 
-	clip = VideoFileClip("./project_video.mp4")
-	output_video = "./project_video_processed.mp4"
-	output_clip = clip.fl_image(process_image)
-	output_clip.write_videofile(output_video, audio=False)
+wi = WindowImage(subimg,hog_features)
+
+wi = self.compute_feature_vector(wi = wi)
+
+# Scale features and make a prediction
+test_features = self.std.transform(wi.image_features)
+
+test_prediction = self.svc.predict(test_features)
+```
+
+Finally, if the window is classified as car, this is addedd to the windows array for the drawing step.
+
+####2. Heatmap computation
+
+In order to track cars over some frames (I choose 5 as number of frames over which to track cars), and mainly to remove false positive, the heatmap of each detection was computed. 
+For each frame computed, the class *DetectionManager* keeps track of all the windows detected in the *self.windows* list. 
+All the windows are firstly computed in order to add them in the list of the windows of the last frame seen over the last 5. Then the heatmap is computed for this single frame and combined with the last 4 by the DetectionManager
+
+```python	
+def manage_heat_maps(self, image):
+	heatmap = np.zeros_like(image[:,:,0]).astype(np.float)
+	# Add += 1 for all pixels inside each bbox
+	# Assuming each "box" takes the form ((x1, y1), (x2, y2))
+	for box in self.windows:
+		heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+
+	if len(self.heat_maps) >= self.heat_map_frames:
+		del(self.heat_maps[0])
+		del(self.windows_history[0])
+
+	self.heat_maps.append(heatmap)
+	self.windows_history.append(self.windows)
+	self.apply_threshold()
+
+def filter_window_by_heatmaps(self,image):
+
+	labels = label(self.heatmap)
+	return self.draw_labeled_bboxes(np.copy(image), labels)
+```
+
+
+####3. Car windows drawing
+
+Finally, the windows filtered by heatmaps are drawed in the original image.
+
+```python	
+def draw_labeled_bboxes(self, img, labels):
+	# Iterate through all detected cars
+	for car_number in range(1, labels[1]+1):
+		# Find pixels with each car_number label value
+		nonzero = (labels[0] == car_number).nonzero()
+		# Identify x and y values of those pixels
+		nonzeroy = np.array(nonzero[0])
+		nonzerox = np.array(nonzero[1])
+		# Define a bounding box based on min/max x and y
+		bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+		# Draw the box on the image
+		cv2.rectangle(img, bbox[0], bbox[1], (0,0,255), 6)
+	# Return the image
+	return img
+```
+
+###Pipeline 
+
+The execution of the described pipeline to a video respect to an image has 1 main difference: the application of the thracking respect to the last x frames. 
+Even if the heatmap can be computed as well and the false positive can be removed, cannot be applied the detection over all the last frames.
+In both cases the classifier is trained, or the already trained classifier is loaded from the pickle file.
+
+For video pipeline, the DetectionManager is defined only once and the used for all the frames, in order to use the history about detection.
+The *moviepy.editor VideoFileClip* class was used to elaborate the video. 
+
+```python
+def test_on_videos(dm):
+    files = os.listdir('./Dataset/videos/')
+    for f in files:
+        test_on_video(dm,"./Dataset/videos/",f)
 
 def process_image(img):
-	result = im.find_lane_lines(img)
-	return result
+
+    result = dm.detect_cars(img)
+    return result
+    
+if __name__ == "__main__":
+    
+    dm = DetectionManager()
+    dm.train_SVC()
+    test_on_video(dm,"./Dataset/","project_video.mp4")
+   
 ```
 
 ###Discussion
 
 ####1. 
-In my opinion, the good results of a solution to this kind of problem comes from two different ways:
-1. Compute a strong and roboust edge detection to identify lane lines
-2. Develop a smart strategy to detect lines depending of the history (last frames) and the current detection features (like difference with the last detection rather than plausible curvature).
 
-A good combination of the two point above can provide good lane detection in almost all the conditions. 
-Of course, more complicated situations with a lot of shadows or artificial and not constant light, or even sun light reflection, requires a stronger calibration of the approach parameters.
+At the end of the project there are some points that interest me during the development:
+1. Dataset management. I used for this project the provided dataset that comes from some video stream. Means that only using a simple random selector of images for train and test set may have brought into a "not balanced" dataset, in the sense that some train examples could not have been used also for validation (and viceversa), reducing the generalization of the classifier. Moreover we use a bunch of examples for this project (almost 20000). We know that SVM does not work properly with very big dataset. But which is the max value?
+2. SVM Classifier kernel. During the development of this project I tryed both the linear and the rbf kernels. While the second one brings to better results during the training phase, the first one seems to work better in the video. The classifier with rbf kernel as a matter of facts, had an hard work in classifying correclty cars close to the camera, expecially for the black one. On the other side it introduce almost none false positive. My feeling in this case is that the non linear svm system overfit data and does not generalize weel.  
 
 ####2 
 Interesting possibile future investigation
 Several are the possibile interesting investigation:
 
-1. Apply all the strategy (from the edge detection using color and sobel operator) at the bird eye image instead of at the original image. This would let the approach to ignore from the start about all the not interesting points
-2. Investigate in deep masks combinations for edge detection. Different operators as well as different combinatio of the computed masks could bring to different solution
+1. Try to find different features that can represent even better a car. For the purpose of this project we use color, edges/shapes, and spatial features. Perhaps something different and powerful can be thought
+2. Try with different classifier as well as different kernel for the svm classifier.
 3. Why not combine the computer vision approach with a strong DNN?
