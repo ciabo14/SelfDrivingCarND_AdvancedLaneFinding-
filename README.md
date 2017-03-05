@@ -1,5 +1,5 @@
 # Project 5: Vehicle detection and tracking
-This is the 5th project for the Self driving car nanodegree - Term 1
+This is the 5th project for the Self driving car nanodegree - Term 1. This requires to elaborate the images coming from a camera placed in front of the car, in order to detect cars and track them.
 
 The provided project is made of the following files:
 [//]: # (File References)
@@ -13,56 +13,95 @@ The provided project is made of the following files:
 
 [***DetectionManager.py***]: this is the core class of the project. It includes all the training computation for the classifier as well as the second part involved in the classification and vehicle detection and traction. 
 
-[***RoadImage.py***]:
-[***CameraManager.py***]: is the class responsible for the camera management. It is used to calibrate the camera and to apply everuy kind of transformation to the images that involve transformations due to the camera
+[***output images***]: ./output_images are some images coming from the video stream and elaborated with the sw.
 
-[***ImageManager.py***]: is the core manager of the algorithm. It manage all the work into images, from creation of the CameraManager, up to the call to the line detection function.
-
-[***RoadImage.py***]: represent a road image class. It includes all the representation of the image used during the process, and is responsible to apply color/sobel filters to the original undistorted image 
-
-[***Line.py***]: the line class is responsible for all the line detection steps. It not only detect lines from the bird eyes view of the road, but manage also the history of seen lines and manage the curvature/position calculation
-
-[***output images***]: ./output_images are the test images recomputed applying the algorithm
-
-[***output video***]: ./project_video_processed.mp4 is the project_video.mp4 reprocessed accordingly to the description above
+[***output video***]: ./project_video_processed.mp4 is the project_video.mp4 reprocessed accordingly to the sw computed.
 
 ---
 
-###Camera Calibration
+###Classifier training
 
-In order to detect correctly the lanes, because cameras uses lenses and are not a pinhole camera, the camera need to be calibrated in order to obtain a transformation of the images like they were captured using an ideal model.
+In order to detect correctly the cars in each frame of the video, some kind of classifier need to be trained with pictures form the provided dataset. 
 
-####1. Computation of camera matrix
+####1. Dataset management
 
-Given a point in the 3D image P(X,Y,Z), this point is transformed by the camera into a 2D point p(x,y) via the camera Matrix.
-![equation](http://latex.codecogs.com/gif.latex?P%5Csimp)
-However, lenses introduce  `radial ` and  `tangetial ` distortion, a correction of these distortion are required in order to have an image as taken from the pinhole camera.
-**Camera matrix** and **distortion coefficients** can be discovered taking images of a known pattern in different position together with the pattern in a non *distorted* form, and found the transformation that map the distorted images in the known pattern. 
-The process of discovering this elements is the called **camera calibration**.
-The Camera in entirely managed in the `CameraManager.py` by the *CameraManager* class. 
-If the camera was never calibrated, the manager calibrate the camera with the support of the chess pattern images located in the folder "./camera_cal" and then save the camera matrix and the distortion coefficients into a file `calibration.p` in the same file. Instead, if the calibration was already executed, the manager load the file and the relative items.
-During the calibration we first found the internal corners of the chess pattern (known as number **(9,6)**) for each of the image provided.
-```python
-gray_image = cv2.cvtColor(original_img,cv2.COLOR_BGR2GRAY)
-ret, corners = cv2.findChessboardCorners(gray_image, self.grid_shape, None)
-```
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/FoundCorners_1.png)
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/FoundCorners_2.png)
-If the corners are found these are appened to the set of points for all the images 
-```python
-if ret:
-	imgpoints.append(corners)
-```
-and finally the camera matrix and the distortion coefficients are computed using the cv2 function
-```python
-ret, self.cam_mtx, self.cal_dist, self.rvecs, self.tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray_image.shape[::-1], None, None)
-```
-*self.cam_mtx*  and *self.cal_dist* are then used to compute the undistorted image for each image analized
+The dataset provided is made as follows:
+vehicles: 2876 + 7100
+non-vehicles: 8968
+
+The vehicles dataset was made of two subset. The first includes usual vehicle images. The second set instead, comes from vehicles images of different nature, in more critical scenario. 
+Below a couple of images coming from the datasets.
+
+![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/non-vehicles.png)
+![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/vehicles1.png)
+![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/vehicles2.png)
+
+In order to let the classifier be as much as generalized as possible, both the two dataset were used.
+All the images are firstly detected by the datasetManager, and splitted into the train/test sets with a 80%/20% ratio.
+The split was done using the train_test_split function provided by *sklearn* library:
 
 ```python
-cv2.undistort(img, self.cam_mtx, self.cal_dist, None, self.cam_mtx)
+for (path, dirs, f) in os.walk(dataset_positive):
+            np.random.shuffle(f)
+            files1 = ["{}/{}".format(dataset_positive,file_name) for file_name in f]
+            labels1 = [1 for i in files1]
+        for (path, dirs, f) in os.walk(dataset_negative):
+            np.random.shuffle(f)
+            files2 = ["{}/{}".format(dataset_negative,file_name) for file_name in f]
+            labels2 = [0 for i in files2]
+        
+        X_train, X_test, y_train, y_test = train_test_split(files1+files2, labels1+labels2, test_size=test_p, random_state=42)
 ```
-![alt tag](https://github.com/ciabo14/SelfDrivingCarND_AdvancedLaneFinding/blob/master/images/CameraUndistortion.png)
+####2. Feature extraction
+
+In order to train the classifier, features for each image were computed. Accordingly with the class videos, three different type of features were computed for each image:
+
+1. spatial_features;
+2. histogram_features;
+3. hog_features
+
+The three different type of features represent three different aspects of images and together well represent each image.
+While spatial and histogram features are striclty correlated with the color of pixels, the hog feature is correlated with the shape of the image. For this reason the first two feature were computed in the RGB representation of the image, while the hog features were computed from the HLS representation of the image itself.
+
+```python
+self.spatial_cspace = "RGB"
+		self.hist_cspace = "RGB"
+		self.hog_cspace = "HLS"
+
+...
+
+def compute_feature_vector(self,image_name = "",wi = None):
+		
+		if image_name != "":
+			image = WindowImage(cv2.cvtColor(cv2.imread(image_name),cv2.COLOR_BGR2RGB))
+		if wi != NullType:
+			image = wi
+		if self.spatial_f_en:
+			image.extract_spatial_features(self.spatial_cspace, self.spatial_size)
+		if self.color_hist_f_en:
+			image.extract_hist_features(self.hist_cspace, self.hist_bins, self.hist_range)
+		if self.hog_f_en and wi == None:
+			image.extract_hog_features(self.hog_cspace, self.hog_channel, self.orient, self.pix_per_cell, self.cell_per_block, False, False)
+		
+		image.combine_features(self.spatial_f_en, self.color_hist_f_en, self.hog_f_en)
+		return image
+```
+The *compute_feature_vector* is executed for each image in the dataset, and exploit the feature computation defined directly in the *WindowImage* class. 
+Note that the second condition for the computation of the *hog_feature* vector is used to avoid the computation of the hog features multiple time in the classification phase.
+After several tests, the following values where choosen as parameters for the feature extraction:
+``` python
+self.orient = 9
+self.pix_per_cell = 8
+self.cell_per_block = 2 
+self.hog_channel = "ALL"
+self.spatial_size = 16
+self.hist_bins = 32
+self.hist_range = (0,256)
+```
+
+####3. Classifier training
+
+The SVM classifier was the classifier choosen. Several 
 
 ###Pipeline (single images)
 
