@@ -19,11 +19,11 @@ The provided project is made of the following files:
 
 ---
 
-###Classifier training
+### Classifier training
 
 In order to detect correctly the cars in each frame of the video, some kind of classifier need to be trained with pictures form the provided dataset. 
 
-####1. Dataset management
+#### 1. Dataset management
 
 The dataset provided is made as follows:
 vehicles: 2826 + 5967
@@ -52,7 +52,7 @@ for (path, dirs, f) in os.walk(dataset_positive):
         
         X_train, X_test, y_train, y_test = train_test_split(files1+files2, labels1+labels2, test_size=test_p, random_state=42)
 ```
-####2. Feature extraction
+#### 2. Feature extraction
 
 In order to train the classifier, features for each image were computed. Accordingly with the class videos, three different type of features were computed for each image:
 
@@ -99,7 +99,7 @@ self.hist_bins = 32
 self.hist_range = (0,256)
 ```
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/hog.png)
-####3. Classifier training
+#### 3. Classifier training
 
 The SVM classifier was the classifier choosen. Different type of classifier were tested. Different values for C, gamma parameters as well as different values for the kernel. 
 
@@ -144,11 +144,11 @@ train_set = self.std.fit_transform(train_features)
 test_set = self.std.fit_transform(test_features)
 ```
 
-###Car detection and tracking
+### Car detection and tracking
 
 Once the classifier was trained, all the images from the frame were elaborated in order to detect and track the cars.
 
-####1. Split of the frame into windows. 
+#### 1. Split of the frame into windows. 
 
 The classifier was trained using windows of size (64,64). For this reason in order to detect cars into the frames of the video a windows split of the image is required. 
 With the knowledge that cars appears bigger when close to the camera, and smaller when far away from the camera, in order to detect cars we need to use windows with different size, depending on the relative position respect to the camera. 
@@ -241,7 +241,7 @@ test_prediction = self.svc.predict(test_features)
 
 Finally, if the window is classified as car, this is addedd to the windows array for the drawing step.
 
-####2. Heatmap computation
+#### 2. Heatmap computation
 
 In order to track cars over some frames (I choose 5 as number of frames over which to track cars), and mainly to remove false positive, the heatmap of each detection was computed. 
 For each frame computed, the class *DetectionManager* keeps track of all the windows detected in the *self.windows* list. 
@@ -270,7 +270,7 @@ def filter_window_by_heatmaps(self,image):
 ```
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/heatmap.png)
 
-####3. Car windows drawing
+#### 3. Car windows drawing
 
 Finally, the windows filtered by heatmaps are drawed in the original image.
 
@@ -291,7 +291,7 @@ def draw_labeled_bboxes(self, img, labels):
 	return img
 ```
 ![alt tag](https://github.com/ciabo14/SelfDrivingCarND_VehicleDetectioAndTracking/blob/master/images/car_detected.png)
-###Pipeline 
+### Pipeline 
 
 The execution of the described pipeline to a video respect to an image has 1 main difference: the application of the thracking respect to the last x frames. 
 Even if the heatmap can be computed as well and the false positive can be removed, cannot be applied the detection over all the last frames.
@@ -319,15 +319,15 @@ if __name__ == "__main__":
    
 ```
 
-###Discussion
+### Discussion
 
-####1. 
+#### 1. 
 
 At the end of the project there are some points that interest me during the development:
 1. Dataset management. I used for this project the provided dataset that comes from some video stream. Means that only using a simple random selector of images for train and test set may have brought into a "not balanced" dataset, in the sense that some train examples could not have been used also for validation (and viceversa), reducing the generalization of the classifier. Moreover we use a bunch of examples for this project (almost 20000). We know that SVM does not work properly with very big dataset. But which is the max value?
 2. SVM Classifier kernel. During the development of this project I tryed both the linear and the rbf kernels. While the second one brings to better results during the training phase, the first one seems to work better in the video. The classifier with rbf kernel as a matter of facts, had an hard work in classifying correclty cars close to the camera, expecially for the black one. On the other side it introduce almost none false positive. My feeling in this case is that the non linear svm system overfit data and does not generalize weel.  
 
-####2 
+#### 2 
 Interesting possibile future investigation
 Several are the possibile interesting investigation:
 
